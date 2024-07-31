@@ -3,7 +3,7 @@ class ApiError extends Error {//Error is predefined class of nodejs
         statusCode,
         message = "Something went Wrong",
         errors = [],
-        statck = ""
+        stack = ""
     ) {
         super(message)
         this.statusCode = statusCode//indicating type of the error
@@ -12,6 +12,11 @@ class ApiError extends Error {//Error is predefined class of nodejs
         this.success = false//indicating that error is occurred 
         this.errors = errors
 
+        if (stack) {
+            this.stack = stack
+        } else {
+            Error.captureStackTrace(this, this.constructor)
+        }
     }
 }
 export { ApiError }
