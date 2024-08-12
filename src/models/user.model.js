@@ -46,7 +46,7 @@ const userSchema = new mongoose.Schema({
 
         required: [true, 'Password is required']
     },
-    RefreshTokens: {
+    refreshToken: {
         type: String
     }
 
@@ -60,7 +60,7 @@ userSchema.pre("save", async function (next) {//here pre is used for execution j
     if (!this.isModified("password")) return next();//this is for the blockage, it will only run if there is any modification in password field 
     //isModified is predefined function and string is taken as input
 
-    this.password = bcrypt.hash(this.password, 10)//this 10 is number of rounds for encryption
+    this.password = await bcrypt.hash(this.password, 10)//this 10 is number of rounds for encryption
     next()
 })
 
