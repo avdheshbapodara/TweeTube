@@ -50,7 +50,7 @@ const userSchema = new mongoose.Schema({
         type: String
     }
 
-}, { timestamps: True })
+}, { timestamps: true })
 
 userSchema.pre("save", async function (next) {//here pre is used for execution just before saving the data
     // async is because it take some time for encrypting and processing the data
@@ -93,5 +93,9 @@ userSchema.methods.generateRefereshToken = function () {//referesh token generat
         }
     )
 }
+//Access tokens are of short duration but referesh tokens are long duration tokens
+//i.e. Access tokens expires in 15 minutes so session will last 15 min after that you need to enter password again
+//but if there is an feature of referesh token that lasts 1 year so you dont need to write password again and again 
+//although the session expires but if you hit the end point, you will be allowed to login and provide new access token after validating the referesh tokens at both the sides
 
 export const User = mongoose.model('User', userSchema)

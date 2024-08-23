@@ -3,6 +3,24 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import jwt from "jsonwebtoken";
+
+
+const generateAccessAndRefereshTokens = async (userId) => {
+    try {
+        const user = await User.findById(userId)
+        const accessToken = user.generateAccessToken()
+        const refereshToken = user.generateRefereshToken()
+
+        user.refereshToken = refereshToken
+        await user.save({ validateBeforeSave: false })
+
+        return { refereshToken, accessToken }
+    } catch (error) {
+        throw new ApiError(500, "Something went wrong while generating Access and Referesh tokens")
+    }
+}
+
 
 const registerUser = asyncHandler(async (req, res) => {
     //Get Users data from frontend
@@ -21,7 +39,7 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "All fields are required")
     }
 
-    const existedUser = User.findOne({
+    const existedUser = await User.findOne({
         $or: [{ username }, { email }]//for checking multiple variables from db
     })
 
@@ -29,8 +47,15 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new ApiError(409, "User with email or Username already exists")
     }
 
+    //console.log(req.body);//req.body have info of fullname, email, password, username
+    //console.log(req.files);//this have detailed info of avatar and coverImage
+
     const avatarLocalPath = req.files?.avatar[0]?.path//req.files is provided by multer,avatar is used because its named like this in the routes file
-    const coverImageLocalPath = req.files?.coverImage[0]?.path
+
+    let coverImageLocalPath;
+    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {//this all things to handle the empty path of the coverimage because its optional
+        coverImageLocalPath = req.files?.coverImage[0]?.path
+    }
 
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar is Required")
@@ -61,8 +86,139 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     return res.status(201).json(
-        new ApiResponse(200,createdUser,"User Registered Successfully")
+        new ApiResponse(200, createdUser, "User Registered Successfully")
     )
 })
 
-export { registerUser }
+const loginUser = asyncHandler(async (req, res) => {
+    //get data
+    //username or email
+    //check for user
+    //password check
+    //access token and referesh token
+    //send cookie
+
+    const { username, email, password } = req.body;
+
+    if (!(username || email)) {
+        throw new ApiError(400, "username or email is required")
+    }
+
+    const user = await User.findOne({
+        $or: [{ username }, { email }]
+    })
+
+    if (!user) {
+        throw new ApiError(404, "User does not Exist")
+    }
+
+    const isPasswordValid = await user.isPasswordCorrect(password)//check here User or user if error hit
+
+    if (!isPasswordValid) {
+        throw new ApiError(401, "Invalid Credentials")
+    }
+
+    const { accessToken, refereshToken } = await generateAccessAndRefereshTokens(user._id)
+
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+    const options = {//by this cookies will not be modifyable from frontend, but only by servers
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refereshToken, options)
+        .json(
+            new ApiResponse(
+                200,
+                {
+                    user: loggedInUser, accessToken, refereshToken
+                },
+                "User logged in Successfully"
+            )
+        )
+
+})
+
+const logoutUser = asyncHandler(async (req, res) => {
+    //clear cookies
+    //clear referesh tokens
+
+    await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: {
+                refreshToken: undefined
+            }
+        },
+        {
+            new: true
+        }
+    )
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(new ApiResponse(200, {}, "User logged Out"))
+})
+
+const refreshAccessToken = asyncHandler(async (req, res) => {
+    const incomingRefreshToken = req.cookies.refereshToken || req.body.refereshToken
+
+    if (!incomingRefreshToken) {
+        throw new ApiError(401, "Unathorized request")
+    }
+
+    try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFERESH_TOKEN_SECRET
+        )
+
+        const user = await User.findById(decodedToken?._id)
+
+        if (!user) {
+            throw new ApiError(401, "Invalid Refresh Token")
+        }
+
+        if (incomingRefreshToken !== user?.refreshToken) {
+            throw new ApiError(401, "Refresh Token is Expired or used")
+        }
+
+        const options = {
+            httpOnly: true,
+            secure: true
+        }
+
+        const { accessToken, newRefreshToken } = await generateAccessAndRefereshTokens(user._id)
+
+        return res
+            .status(200)
+            .cookie("accessToken", accessToken, options)
+            .cookie("refreshToken", newRefreshToken, options)
+            .json(
+                new ApiResponse(
+                    200,
+                    { accessToken, refreshToken: newRefreshToken },
+                    "Access token Refreshed"
+                )
+            )
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid Refresh Token")
+    }
+})
+export {
+    registerUser,
+    loginUser,
+    logoutUser,
+    refreshAccessToken
+}

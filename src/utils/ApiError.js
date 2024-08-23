@@ -20,5 +20,3 @@ class ApiError extends Error {//Error is predefined class of nodejs
     }
 }
 export { ApiError }
-
-// Understand this file from tushar
